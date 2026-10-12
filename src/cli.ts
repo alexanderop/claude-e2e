@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { loadConfig } from './config.ts'
 import { explore } from './explore.ts'
-import { runTests } from './runner.ts'
+import { resetSite, runTests } from './runner.ts'
 
 const USAGE = `usage:
   node src/cli.ts run [tests/*.e2e.ts ...] [--no-cache]
@@ -30,7 +30,10 @@ async function main() {
   if (command === 'run') {
     const files = rest.length > 0 ? rest : await findTestFiles()
     if (files.length === 0) throw new Error('No test files found (expected tests/*.e2e.ts)')
-    for (const file of files) await import(pathToFileURL(resolve(file)).href)
+    for (const file of files) {
+      resetSite()
+      await import(pathToFileURL(resolve(file)).href)
+    }
     const ok = await runTests(config, { useCache: !values['no-cache'] })
     process.exit(ok ? 0 : 1)
   }

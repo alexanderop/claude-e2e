@@ -8,9 +8,15 @@ export interface Fixtures {
   open(pathOrUrl: string): Promise<void>
 }
 
+export interface SiteOptions {
+  baseUrl: string
+  rules?: string[]
+}
+
 interface TestCase {
   name: string
   fn: (fixtures: Fixtures) => Promise<void>
+  site?: SiteOptions
 }
 
 export interface TestResult {
@@ -24,14 +30,24 @@ export interface TestResult {
 }
 
 const registry: TestCase[] = []
+let currentSite: SiteOptions | undefined
+
+export function site(options: SiteOptions): void {
+  currentSite = options
+}
+
+export function resetSite(): void {
+  currentSite = undefined
+}
 
 export function test(name: string, fn: TestCase['fn']): void {
-  registry.push({ name, fn })
+  registry.push({ name, fn, site: currentSite })
 }
 
 const slugify = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
 
-async function runOne({ name, fn }: TestCase, config: E2EConfig, useCache: boolean): Promise<TestResult> {
+async function runOne({ name, fn, site }: TestCase, baseConfig: E2EConfig, useCache: boolean): Promise<TestResult> {
+  const config = site ? { ...baseConfig, baseUrl: site.baseUrl, rules: site.rules ?? [] } : baseConfig
   const session = `claude-e2e-${slugify(name)}`
   const browser = createBrowser(session)
   const agent = createAgent({ testName: name, session, config, browser, useCache })

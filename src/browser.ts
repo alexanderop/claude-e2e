@@ -2,6 +2,8 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
+const REPLAY_BACKOFF_MS = [100, 300, 600, 1000, 3000]
+const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms))
 
 export interface RecordedAction {
   kind: 'click' | 'fill' | 'press'
@@ -49,9 +51,22 @@ export function createBrowser(session: string): Browser {
     },
     async replayAction(action) {
       const target = ['--name', action.name, '--exact']
-      if (action.kind === 'click') await run(['find', 'role', action.role, 'click', ...target])
-      else if (action.kind === 'fill') await run(['find', 'role', action.role, 'fill', action.value ?? '', ...target])
-      else await run(['press', action.value || 'Enter'])
+      const args =
+        action.kind === 'click'
+          ? ['find', 'role', action.role, 'click', ...target]
+          : action.kind === 'fill'
+            ? ['find', 'role', action.role, 'fill', action.value ?? '', ...target]
+            : ['press', action.value || 'Enter']
+      const backoff = action.optional ? [] : REPLAY_BACKOFF_MS
+      for (const delay of [...backoff, undefined]) {
+        try {
+          await run(args)
+          break
+        } catch (error) {
+          if (delay === undefined) throw error
+          await sleep(delay)
+        }
+      }
       await run(['wait', '600'])
     },
   }

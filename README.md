@@ -2,7 +2,7 @@
 
 > Inspired by [tester-army/e2e](https://github.com/tester-army/e2e) — the original idea: describe a goal in natural language, an agent drives the app, verified actions are cached and replayed without model calls. This is a tiny no-login remake that uses the `claude -p` CLI on your Claude subscription instead of an API key.
 
-A template for AI end-to-end tests. You write goals and checks in plain language; the local Claude Code CLI drives a real browser through [`agent-browser`](https://www.npmjs.com/package/agent-browser). No Playwright, no API key, zero runtime dependencies. The repo ships with [otto.de](https://www.otto.de) as a working example.
+A template for AI end-to-end tests. You write goals and checks in plain language; the local Claude Code CLI drives a real browser through [`agent-browser`](https://www.npmjs.com/package/agent-browser). No Playwright, no API key, zero runtime dependencies. The repo ships with two working examples: [otto.de](https://www.otto.de) (a large shop) and [alexop.dev](https://alexop.dev) (a blog).
 
 ## Requirements
 
@@ -52,11 +52,31 @@ test('search shows priced products', async ({ agent, open }) => {
 })
 ```
 
+### Several sites in one project
+
+`e2e.config.ts` sets the default site. A test file can switch to another site with `site()`; it applies to every test below it in that file and replaces the config's `rules`:
+
+```ts
+// tests/alexop.e2e.ts
+import { site, test } from '../src/runner.ts'
+
+site({
+  baseUrl: 'https://alexop.dev',
+  rules: ['This is a personal blog. Read only: do not subscribe, send email or submit any form.'],
+})
+
+test('alexop: search finds vitest posts', async ({ agent, open }) => {
+  await open('/')
+  await agent.act('Open the site search and search for "vitest"')
+  await agent.assert('Search results are shown and at least one result mentions Vitest')
+})
+```
+
 ## How it works
 
 Each test gets its own isolated browser session (`AGENT_BROWSER_SESSION=claude-e2e-<slug>`), opened fresh and closed afterwards. Tests run serially.
 
-- `act(goal)` — checks the cache first. A cached recording is replayed with plain `agent-browser find role ... click|fill` commands, no model involved. If there is no cache entry, Claude (`claude -p --model sonnet --allowedTools "Bash(agent-browser:*)"` with a JSON schema) does the goal and reports the actions it took as `{kind, role, name, value?, optional?}`.
+- `act(goal)` — checks the cache first. A cached recording is replayed with plain `agent-browser find role ... click|fill` commands, no model involved. Each control lookup retries with a 100/300/600/1000/3000 ms backoff, so late-rendered elements (a JS search box) still replay. A replay that ends on a different URL path than the recording also hands off. If there is no cache entry, Claude (`claude -p --model sonnet --allowedTools "Bash(agent-browser:*)"` with a JSON schema) does the goal and reports the actions it took as `{kind, role, name, value?, optional?}`.
 - `assert(statement)` — a separate read-only Claude call that may only run `agent-browser snapshot`/`get url`/`get title`. Verdicts are `holds`, `fails` or `inconclusive`; only `holds` passes.
 - `waitFor(statement, {timeoutMs})` — polls `snapshot -i` every 500 ms, hashes it (refs and clock-like text stripped) and calls the judge only when the hash changes.
 - Cache gating — a fresh `act` recording is kept pending and written to `.e2e-cache/<sha1(testName + NUL + goal)>.json` only after a later `assert`/`waitFor` passes. A run that did something wrong never poisons the cache.
@@ -71,38 +91,33 @@ Every run also writes `.e2e/report.json`.
 
 ## Sample run
 
-First run (`rm -rf .e2e-cache && pnpm test:e2e`):
+First run, all 6 example tests (`rm -rf .e2e-cache && pnpm test:e2e`):
 
 ```
-● search shows priced products
-✓ search shows priced products  27.6s · 2 model calls · 0 replayed · $0.27
+✓ alexop: posts page lists articles  24.9s · 2 model calls · 0 replayed · $0.17
+✓ alexop: search finds vitest posts  27.4s · 2 model calls · 0 replayed · $0.17
+✓ alexop: vue category filters posts  25.5s · 2 model calls · 0 replayed · $0.18
+✓ search shows priced products  32.4s · 2 model calls · 0 replayed · $0.21
+✓ open the Sale category  30.1s · 2 model calls · 0 replayed · $0.21
+✓ cart is empty for a fresh visitor  29.2s · 2 model calls · 0 replayed · $0.20
 
-● open the Sale category
-✓ open the Sale category  27.2s · 2 model calls · 0 replayed · $0.20
-
-● cart is empty for a fresh visitor
-✓ cart is empty for a fresh visitor  24.8s · 2 model calls · 0 replayed · $0.19
-
-3 passed, 0 failed · 79.5s · 6 model calls · 0 replayed · $0.66
+6 passed, 0 failed · 169.4s · 12 model calls · 0 replayed · $1.15
 ```
 
-Second run (the `act` steps are replayed; the remaining model call per test is the `assert` judge):
+Second run: every `act` replays from the cache; the one model call left per test is the `assert` judge:
 
 ```
-● search shows priced products
-  ↻ replayed (0 model calls)
-✓ search shows priced products  17.7s · 1 model calls · 1 replayed · $0.03
+✓ alexop: posts page lists articles  11.8s · 1 model calls · 1 replayed · $0.04
+✓ alexop: search finds vitest posts  13.1s · 1 model calls · 1 replayed · $0.03
+✓ alexop: vue category filters posts  13.6s · 1 model calls · 1 replayed · $0.05
+✓ search shows priced products  20.2s · 1 model calls · 1 replayed · $0.03
+✓ open the Sale category  15.2s · 1 model calls · 1 replayed · $0.02
+✓ cart is empty for a fresh visitor  14.1s · 1 model calls · 1 replayed · $0.02
 
-● open the Sale category
-  ↻ replayed (0 model calls)
-✓ open the Sale category  13.5s · 1 model calls · 1 replayed · $0.02
-
-● cart is empty for a fresh visitor
-  ↻ replayed (0 model calls)
-✓ cart is empty for a fresh visitor  12.0s · 1 model calls · 1 replayed · $0.02
-
-3 passed, 0 failed · 43.1s · 3 model calls · 3 replayed · $0.08
+6 passed, 0 failed · 88.0s · 6 model calls · 6 replayed · $0.20
 ```
+
+Costs are what `claude -p` reports; on a Claude subscription they count against your plan's usage, not a bill.
 
 After renaming a link in a cached recording, replay fails closed and hands off:
 
