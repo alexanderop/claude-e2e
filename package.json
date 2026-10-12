@@ -1,0 +1,18 @@
+{
+  "name": "claude-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tiny AI end-to-end runner template driven by the claude CLI and agent-browser",
+  "license": "MIT",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test:e2e": "node src/cli.ts run",
+    "explore": "node src/cli.ts explore",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}
